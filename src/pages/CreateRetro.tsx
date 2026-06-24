@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { supabase, createRetro } from '../services/supabase'
+import { createFullRetro } from '../services/supabase'
 
 const CreateRetro: React.FC = () => {
   const [title, setTitle] = useState('')
@@ -8,24 +7,24 @@ const CreateRetro: React.FC = () => {
   const [participants, setParticipants] = useState(5)
   const [showNames, setShowNames] = useState(true)
   const [links, setLinks] = useState<string[]>([])
-  const navigate = useNavigate()
+
 
   const handleCreate = async () => {
-    const res = await createRetro({
-      title,
-      type,
-      show_names: showNames,
-      votes_per_user: 5,
-      participants,
-    })
-    // TODO: generate tokens and set links
-    // For now just navigate to board with placeholder token
-    if (res.error) {
-      alert('Erreur création rétro: ' + res.error.message)
-    } else {
-      // placeholder navigation
-      const retroId = (res.data?.[0] as any)?.id
-      navigate(`/r/${retroId}?t=placeholder`)
+    try {
+      const { retroId, facilitatorToken, participantTokens } = await createFullRetro({
+        title,
+        type,
+        show_names: showNames,
+        votes_per_user: 5,
+        participants,
+      })
+
+      const base = window.location.origin
+      const facilitatorUrl = `${base}/r/${retroId}?t=${facilitatorToken}`
+      const participantUrls = participantTokens.map(t => `${base}/r/${retroId}?t=${t}`)
+      setLinks([facilitatorUrl, ...participantUrls])
+    } catch (e: any) {
+      alert('Erreur création rétro: ' + (e.message ?? e))
     }
   }
 
