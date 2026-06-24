@@ -22,13 +22,15 @@ export function buildMarkdown(
   columns: ColumnDef[],
   cards: Card[],
   votes: Vote[],
-  nameByToken: Record<string, string>
+  nameByToken: Record<string, string>,
+  facilitatorUrl: string
 ): string {
   const lines: string[] = []
   lines.push(`# ${retro.title}`)
   lines.push('')
   lines.push(`- Date : ${formatDate(retro.created_at)}`)
   lines.push(`- Type : ${retro.type}`)
+  lines.push(`- Board animateur : ${facilitatorUrl}`)
   lines.push('')
 
   for (const col of columns) {
@@ -60,9 +62,10 @@ export function downloadMarkdown(
   columns: ColumnDef[],
   cards: Card[],
   votes: Vote[],
-  nameByToken: Record<string, string>
+  nameByToken: Record<string, string>,
+  facilitatorUrl: string
 ) {
-  const md = buildMarkdown(retro, columns, cards, votes, nameByToken)
+  const md = buildMarkdown(retro, columns, cards, votes, nameByToken, facilitatorUrl)
   const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -89,7 +92,8 @@ export function exportPdf(
   columns: ColumnDef[],
   cards: Card[],
   votes: Vote[],
-  nameByToken: Record<string, string>
+  nameByToken: Record<string, string>,
+  facilitatorUrl: string
 ) {
   const sections = columns
     .map(col => {
@@ -126,7 +130,9 @@ export function exportPdf(
 <h1>${escapeHtml(retro.title)}</h1>
 <div class="meta">Date : ${escapeHtml(formatDate(retro.created_at))} · Type : ${escapeHtml(
     retro.type
-  )}</div>
+  )}<br>Board animateur : <a href="${escapeHtml(facilitatorUrl)}">${escapeHtml(
+    facilitatorUrl
+  )}</a></div>
 ${sections}
 <script>window.onload = function () { window.print(); }</script>
 </body></html>`

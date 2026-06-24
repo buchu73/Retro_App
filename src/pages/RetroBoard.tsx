@@ -11,6 +11,7 @@ import {
   deleteCard,
   addVote,
   removeVote,
+  updateRetro,
   subscribeRetro,
 } from '../services/supabase'
 import Column from '../components/Column'
@@ -74,13 +75,15 @@ const RetroBoard: React.FC = () => {
     if (!retroId) return
     try {
       const c = await fetchCards(retroId)
-      const [v, tks] = await Promise.all([
+      const [v, tks, r] = await Promise.all([
         fetchVotes(c.map(x => x.id)),
         fetchTokens(retroId),
+        getRetro(retroId),
       ])
       setCards(c)
       setVotes(v)
       setTokens(tks)
+      setRetro(r)
     } catch {
       /* transient error, will retry on next realtime event */
     }
@@ -139,6 +142,9 @@ const RetroBoard: React.FC = () => {
 
   const isFacilitator = tokenRow.role === 'facilitator'
   const columns = RETRO_COLUMNS[retro.type]
+  const cardsOpen = !retro.cards_locked
+  const votingOpen = !retro.votes_locked
+  const facilitatorUrl = `${window.location.origin}/r/${retro.id}?t=${retro.facilitator_token}`
 
   const nameByToken: Record<string, string> = {}
   tokens.forEach(t => {
@@ -172,8 +178,20 @@ const RetroBoard: React.FC = () => {
     }
   }
 
+  const toggleLock = async (field: 'cards_locked' | 'votes_locked') => {
+    const next = !retro[field]
+    setRetro(prev => (prev ? { ...prev, [field]: next } : prev)) // optimistic
+    try {
+      await updateRetro(retro.id, { [field]: next })
+    } catch (e: any) {
+      alert('Erreur changement de phase : ' + (e.message ?? e))
+      refresh()
+    }
+  }
+
   const handleToggleVote = async (cardId: string) => {
     if (!token) return
+    if (!votingOpen) return
     if (hasVoted(cardId)) {
       // optimistic remove
       setVotes(prev =>
@@ -202,18 +220,22 @@ const RetroBoard: React.FC = () => {
     }
   }
 
-  const cardVMs = (columnKey: string): CardVM[] =>
+  const cardVMs = (col: (typeof columns)[number]): CardVM[] =>
     cards
-      .filter(c => c.column_key === columnKey)
-      .map(c => ({
-        id: c.id,
-        content: c.content,
-        votes: voteCount(c.id),
-        voted: hasVoted(c.id),
-        canVote: votesLeft > 0,
-        canDelete: c.author_token === token || isFacilitator,
-        authorName: retro.show_names ? nameByToken[c.author_token] ?? null : null,
-      }))
+      .filter(c => c.column_key === col.key)
+      .map(c => {
+        const voted = hasVoted(c.id)
+        return {
+          id: c.id,
+          content: c.content,
+          votes: voteCount(c.id),
+          voted,
+          voteDisabled: !votingOpen || (!voted && votesLeft <= 0),
+          canDelete: c.author_token === token || isFacilitator,
+          authorName: retro.show_names ? nameByToken[c.author_token] ?? null : null,
+          cardClass: col.cardClass,
+        }
+      })
 
   return (
     <div className="p-4 max-w-screen-xl mx-auto">
@@ -223,20 +245,36 @@ const RetroBoard: React.FC = () => {
           <p className="text-sm text-gray-500">
             {isFacilitator ? 'Animateur' : tokenRow.display_name ?? 'Participant'} ·
             Votes restants : {Math.max(0, votesLeft)}/{retro.votes_per_user}
+            {!cardsOpen && ' · Ajouts clos'}
+            {!votingOpen && ' · Votes clos'}
           </p>
         </div>
         {isFacilitator && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => toggleLock('cards_locked')}
+              className="border px-3 py-1 rounded hover:bg-gray-50"
+            >
+              {cardsOpen ? 'Clore les ajouts' : 'Rouvrir les ajouts'}
+            </button>
+            <button
+              onClick={() => toggleLock('votes_locked')}
+              className="border px-3 py-1 rounded hover:bg-gray-50"
+            >
+              {votingOpen ? 'Clore les votes' : 'Rouvrir les votes'}
+            </button>
             <button
               onClick={() =>
-                downloadMarkdown(retro, columns, cards, votes, nameByToken)
+                downloadMarkdown(retro, columns, cards, votes, nameByToken, facilitatorUrl)
               }
               className="border px-3 py-1 rounded hover:bg-gray-50"
             >
               Export MD
             </button>
             <button
-              onClick={() => exportPdf(retro, columns, cards, votes, nameByToken)}
+              onClick={() =>
+                exportPdf(retro, columns, cards, votes, nameByToken, facilitatorUrl)
+              }
               className="border px-3 py-1 rounded hover:bg-gray-50"
             >
               Export PDF
@@ -256,7 +294,9 @@ const RetroBoard: React.FC = () => {
             key={col.key}
             label={col.label}
             columnKey={col.key}
-            cards={cardVMs(col.key)}
+            columnClass={col.columnClass}
+            cards={cardVMs(col)}
+            canAddCards={cardsOpen}
             onAddCard={handleAddCard}
             onToggleVote={handleToggleVote}
             onDeleteCard={handleDeleteCard}

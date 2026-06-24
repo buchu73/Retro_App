@@ -6,9 +6,11 @@ export interface CardVM {
   content: string
   votes: number
   voted: boolean
-  canVote: boolean
+  voteDisabled: boolean
   canDelete: boolean
   authorName: string | null
+  /** Accent border class for the column this card belongs to. */
+  cardClass: string
 }
 
 interface CardProps {
@@ -19,13 +21,12 @@ interface CardProps {
 
 const CardComponent: React.FC<CardProps> = ({ card, onToggleVote, onDelete }) => {
   return (
-    <div className="border rounded p-2 mb-2 bg-white shadow-sm">
+    <div className={`border rounded p-2 mb-2 bg-white shadow-sm ${card.cardClass}`}>
       <p className="whitespace-pre-wrap break-words">{card.content}</p>
       <div className="flex justify-between items-center mt-2 text-sm text-gray-600">
         <button
           onClick={() => onToggleVote(card.id)}
-          disabled={!card.voted && !card.canVote}
-          title={!card.voted && !card.canVote ? 'Limite de votes atteinte' : 'Voter'}
+          disabled={card.voteDisabled}
           className={
             'px-2 py-0.5 rounded border transition-colors disabled:opacity-40 ' +
             (card.voted

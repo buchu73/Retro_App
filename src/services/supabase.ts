@@ -102,6 +102,15 @@ export const getToken = async (
   return (data as Token) ?? null
 }
 
+/** Update facilitator-controlled flags on a retro (lock cards / votes). */
+export const updateRetro = async (
+  retroId: string,
+  patch: Partial<Pick<Retro, 'cards_locked' | 'votes_locked'>>
+) => {
+  const { error } = await supabase.from('retros').update(patch).eq('id', retroId)
+  if (error) throw error
+}
+
 /** Claim a token by attaching a display name (first connection). */
 export const claimToken = async (token: string, displayName: string) => {
   const { error } = await supabase
@@ -191,6 +200,11 @@ export const subscribeRetro = (retroId: string, onChange: () => void) => {
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'votes' },
+      onChange
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'retros', filter: `id=eq.${retroId}` },
       onChange
     )
     .subscribe()
