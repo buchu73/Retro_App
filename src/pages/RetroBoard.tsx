@@ -154,6 +154,10 @@ const RetroBoard: React.FC = () => {
   const myVoteCount = votes.filter(v => v.voter_token === token).length
   const votesLeft = retro.votes_per_user - myVoteCount
 
+  const participantTokens = tokens.filter(t => t.role === 'participant')
+  const connected = participantTokens.filter(t => t.display_name)
+  const waiting = participantTokens.length - connected.length
+
   const voteCount = (cardId: string) =>
     votes.filter(v => v.card_id === cardId).length
   const hasVoted = (cardId: string) =>
@@ -283,25 +287,51 @@ const RetroBoard: React.FC = () => {
         )}
       </header>
 
-      <div
-        className="grid gap-4"
-        style={{
-          gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))`,
-        }}
-      >
-        {columns.map(col => (
-          <Column
-            key={col.key}
-            label={col.label}
-            columnKey={col.key}
-            columnClass={col.columnClass}
-            cards={cardVMs(col)}
-            canAddCards={cardsOpen}
-            onAddCard={handleAddCard}
-            onToggleVote={handleToggleVote}
-            onDeleteCard={handleDeleteCard}
-          />
-        ))}
+      <div className="flex gap-4 items-start">
+        {isFacilitator && (
+          <aside className="w-48 shrink-0 border rounded p-3 bg-gray-50">
+            <h2 className="font-bold mb-2">
+              Connectés ({connected.length}/{participantTokens.length})
+            </h2>
+            <ul className="space-y-1 text-sm">
+              {connected.map(t => (
+                <li key={t.token} className="flex items-center gap-1">
+                  <span className="text-green-500">●</span>
+                  <span className="truncate">{t.display_name}</span>
+                </li>
+              ))}
+            </ul>
+            {connected.length === 0 && (
+              <p className="text-sm text-gray-500">Personne pour le moment.</p>
+            )}
+            {waiting > 0 && (
+              <p className="text-sm text-gray-400 mt-2">
+                {waiting} siège{waiting > 1 ? 's' : ''} en attente
+              </p>
+            )}
+          </aside>
+        )}
+
+        <div
+          className="grid gap-4 flex-1"
+          style={{
+            gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))`,
+          }}
+        >
+          {columns.map(col => (
+            <Column
+              key={col.key}
+              label={col.label}
+              columnKey={col.key}
+              columnClass={col.columnClass}
+              cards={cardVMs(col)}
+              canAddCards={cardsOpen}
+              onAddCard={handleAddCard}
+              onToggleVote={handleToggleVote}
+              onDeleteCard={handleDeleteCard}
+            />
+          ))}
+        </div>
       </div>
     </div>
   )

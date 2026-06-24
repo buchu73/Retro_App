@@ -17,7 +17,7 @@ export const RETRO_COLUMNS: Record<RetroType, ColumnDef[]> = {
     { key: 'glad', label: 'Glad 😀', columnClass: 'bg-green-100/50 border-green-200', cardClass: 'border-l-4 border-l-green-400' },
   ],
   speedboat: [
-    { key: 'wind', label: 'Vent (ce qui pousse)', columnClass: 'bg-amber-100/50 border-amber-200', cardClass: 'border-l-4 border-l-amber-400' },
+    { key: 'wind', label: 'Vent (ce qui pousse)', columnClass: 'bg-sky-100/50 border-sky-200', cardClass: 'border-l-4 border-l-sky-400' },
     { key: 'anchor', label: 'Ancres (ce qui freine)', columnClass: 'bg-red-100/50 border-red-200', cardClass: 'border-l-4 border-l-red-400' },
     { key: 'rocks', label: 'Rochers (risques)', columnClass: 'bg-orange-100/50 border-orange-200', cardClass: 'border-l-4 border-l-orange-400' },
     { key: 'island', label: 'Île (objectif)', columnClass: 'bg-green-100/50 border-green-200', cardClass: 'border-l-4 border-l-green-400' },
