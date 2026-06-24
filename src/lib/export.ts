@@ -1,4 +1,4 @@
-import type { Card, ColumnDef, Retro, Vote } from '../types'
+import type { Card, ColumnDef, Retro, Token, Vote } from '../types'
 
 const countVotes = (votes: Vote[], cardId: string) =>
   votes.filter(v => v.card_id === cardId).length
@@ -16,6 +16,12 @@ const formatDate = (iso: string) => {
   }
 }
 
+/** Connected participants ordered by connection time. */
+const connectionHistory = (tokens: Token[]) =>
+  tokens
+    .filter(t => t.claimed_at && t.display_name)
+    .sort((a, b) => (a.claimed_at! < b.claimed_at! ? -1 : 1))
+
 /** Build the Markdown export string for a retro. */
 export function buildMarkdown(
   retro: Retro,
@@ -23,7 +29,8 @@ export function buildMarkdown(
   cards: Card[],
   votes: Vote[],
   nameByToken: Record<string, string>,
-  facilitatorUrl: string
+  facilitatorUrl: string,
+  tokens: Token[]
 ): string {
   const lines: string[] = []
   lines.push(`# ${retro.title}`)
@@ -32,6 +39,15 @@ export function buildMarkdown(
   lines.push(`- Type : ${retro.type}`)
   lines.push(`- Board animateur : ${facilitatorUrl}`)
   lines.push('')
+
+  const history = connectionHistory(tokens)
+  if (history.length > 0) {
+    lines.push('## Historique de connexion')
+    for (const t of history) {
+      lines.push(`- ${t.display_name} — ${formatDate(t.claimed_at!)}`)
+    }
+    lines.push('')
+  }
 
   for (const col of columns) {
     lines.push(`## ${col.label}`)
@@ -63,9 +79,10 @@ export function downloadMarkdown(
   cards: Card[],
   votes: Vote[],
   nameByToken: Record<string, string>,
-  facilitatorUrl: string
+  facilitatorUrl: string,
+  tokens: Token[]
 ) {
-  const md = buildMarkdown(retro, columns, cards, votes, nameByToken, facilitatorUrl)
+  const md = buildMarkdown(retro, columns, cards, votes, nameByToken, facilitatorUrl, tokens)
   const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -93,8 +110,22 @@ export function exportPdf(
   cards: Card[],
   votes: Vote[],
   nameByToken: Record<string, string>,
-  facilitatorUrl: string
+  facilitatorUrl: string,
+  tokens: Token[]
 ) {
+  const history = connectionHistory(tokens)
+  const historyHtml =
+    history.length > 0
+      ? `<section><h2>Historique de connexion</h2><ul>${history
+          .map(
+            t =>
+              `<li>${escapeHtml(t.display_name as string)} — ${escapeHtml(
+                formatDate(t.claimed_at as string)
+              )}</li>`
+          )
+          .join('')}</ul></section>`
+      : ''
+
   const sections = columns
     .map(col => {
       const colCards = sortedColumnCards(cards, votes, col.key)
@@ -133,6 +164,7 @@ export function exportPdf(
   )}<br>Board animateur : <a href="${escapeHtml(facilitatorUrl)}">${escapeHtml(
     facilitatorUrl
   )}</a></div>
+${historyHtml}
 ${sections}
 <script>window.onload = function () { window.print(); }</script>
 </body></html>`

@@ -269,7 +269,7 @@ const RetroBoard: React.FC = () => {
             </button>
             <button
               onClick={() =>
-                downloadMarkdown(retro, columns, cards, votes, nameByToken, facilitatorUrl)
+                downloadMarkdown(retro, columns, cards, votes, nameByToken, facilitatorUrl, tokens)
               }
               className="border px-3 py-1 rounded hover:bg-gray-50"
             >
@@ -277,7 +277,7 @@ const RetroBoard: React.FC = () => {
             </button>
             <button
               onClick={() =>
-                exportPdf(retro, columns, cards, votes, nameByToken, facilitatorUrl)
+                exportPdf(retro, columns, cards, votes, nameByToken, facilitatorUrl, tokens)
               }
               className="border px-3 py-1 rounded hover:bg-gray-50"
             >

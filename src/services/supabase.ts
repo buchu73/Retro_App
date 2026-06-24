@@ -247,6 +247,11 @@ export const subscribeRetro = (retroId: string, onChange: () => void) => {
     )
     .on(
       'postgres_changes',
+      { event: '*', schema: 'public', table: 'tokens', filter: `retro_id=eq.${retroId}` },
+      onChange
+    )
+    .on(
+      'postgres_changes',
       { event: '*', schema: 'public', table: 'retros', filter: `id=eq.${retroId}` },
       onChange
     )
