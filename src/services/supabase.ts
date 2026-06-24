@@ -10,26 +10,29 @@ export const supabase: SupabaseClient<Database> = createClient(supabaseUrl, supa
 // Helper to generate a random UUID for tokens
 // Using native crypto.randomUUID() (available in modern browsers & Node)
 
-export const createRetro = async (params: {
-  title: string
-  type: 'mad_sad_glad' | 'speedboat'
-  show_names: boolean
-  votes_per_user?: number
-  participants: number
-}) => {
-  // Insert the retro and return the created row (including its id)
+export const createRetro = async (
+  params: {
+    title: string
+    type: 'mad_sad_glad' | 'speedboat'
+    show_names: boolean
+    votes_per_user?: number
+    participants: number
+  },
+  facilitatorToken: string
+) => {
+  // Insert the retro and return the created row (including its id).
+  // `facilitator_token` is NOT NULL on the table, so it must be supplied here.
   const { data, error } = await supabase
     .from('retros')
-    .insert([params])
+    .insert([{ ...params, facilitator_token: facilitatorToken }])
     .select('id')
     .single()
   if (error) throw error
   return data
 }
 
-/** Create a facilitator token for a given retro */
-export const createFacilitatorToken = async (retroId: string) => {
-  const token = crypto.randomUUID()
+/** Create the facilitator token row for a given retro */
+export const createFacilitatorToken = async (retroId: string, token: string) => {
   const { error } = await supabase.from('tokens').insert([
     { retro_id: retroId, token, role: 'facilitator', display_name: null },
   ])
@@ -58,9 +61,12 @@ export const createFullRetro = async (params: {
   votes_per_user?: number
   participants: number
 }) => {
-  const retro = await createRetro(params)
+  // Generate the facilitator token up front so it can be stored on the retro
+  // row (facilitator_token is NOT NULL) and reused for its token row.
+  const facilitatorToken = crypto.randomUUID()
+  const retro = await createRetro(params, facilitatorToken)
   const retroId = retro.id as string
-  const facilitatorToken = await createFacilitatorToken(retroId)
+  await createFacilitatorToken(retroId, facilitatorToken)
   const participantTokens = await createParticipantTokens(
     retroId,
     params.participants
