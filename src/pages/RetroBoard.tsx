@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import {
   getRetro,
@@ -14,12 +14,15 @@ import {
   updateRetro,
   subscribeRetro,
   subscribePresence,
+  logConnect,
+  logDisconnect,
+  fetchPresenceLog,
 } from '../services/supabase'
 import Column from '../components/Column'
 import type { CardVM } from '../components/Card'
 import { RETRO_COLUMNS } from '../types'
 import type { Card, Retro, Token, Vote } from '../types'
-import { downloadMarkdown, exportPdf } from '../lib/export'
+import { downloadMarkdown, renderPdf } from '../lib/export'
 
 const RetroBoard: React.FC = () => {
   const { retroId } = useParams<{ retroId: string }>()
@@ -37,6 +40,11 @@ const RetroBoard: React.FC = () => {
   const [votes, setVotes] = useState<Vote[]>([])
   const [tokens, setTokens] = useState<Token[]>([])
   const [onlineTokens, setOnlineTokens] = useState<string[]>([])
+  // Facilitator-only recorder state: token -> open presence_log row id.
+  const logRef = useRef<{ rows: Map<string, string>; pending: Set<string> }>({
+    rows: new Map(),
+    pending: new Set(),
+  })
 
   // Validate the token and load the retro.
   useEffect(() => {
@@ -111,6 +119,38 @@ const RetroBoard: React.FC = () => {
     )
     return unsub
   }, [retroId, needsName, tokenRow, token])
+
+  // Facilitator records connect/disconnect sessions to presence_log as the
+  // online set changes. New online token -> open a row; gone -> close it.
+  useEffect(() => {
+    if (!retroId || needsName || !tokenRow || tokenRow.role !== 'facilitator') return
+    const { rows, pending } = logRef.current
+    const nameOf: Record<string, string> = {}
+    tokens.forEach(t => {
+      if (t.display_name) nameOf[t.token] = t.display_name
+    })
+    const online = new Set(onlineTokens)
+
+    onlineTokens.forEach(tk => {
+      if (tk === token) return // skip the facilitator's own presence
+      if (rows.has(tk) || pending.has(tk)) return
+      pending.add(tk)
+      logConnect(retroId, tk, nameOf[tk] ?? null)
+        .then(id => {
+          pending.delete(tk)
+          rows.set(tk, id)
+        })
+        .catch(() => pending.delete(tk))
+    })
+
+    Array.from(rows.keys()).forEach(tk => {
+      if (!online.has(tk)) {
+        const id = rows.get(tk) as string
+        rows.delete(tk)
+        logDisconnect(id).catch(() => {})
+      }
+    })
+  }, [onlineTokens, tokens, retroId, needsName, tokenRow, token])
 
   const submitName = async () => {
     const name = nameInput.trim()
@@ -244,6 +284,30 @@ const RetroBoard: React.FC = () => {
     }
   }
 
+  const handleExportMd = async () => {
+    try {
+      const log = await fetchPresenceLog(retro.id)
+      downloadMarkdown(retro, columns, cards, votes, nameByToken, facilitatorUrl, log)
+    } catch (e: any) {
+      alert('Erreur export : ' + (e.message ?? e))
+    }
+  }
+
+  const handleExportPdf = async () => {
+    const win = window.open('', '_blank')
+    if (!win) {
+      alert('Impossible d’ouvrir la fenêtre d’impression (popup bloqué ?).')
+      return
+    }
+    try {
+      const log = await fetchPresenceLog(retro.id)
+      renderPdf(win, retro, columns, cards, votes, nameByToken, facilitatorUrl, log)
+    } catch (e: any) {
+      win.close()
+      alert('Erreur export : ' + (e.message ?? e))
+    }
+  }
+
   const cardVMs = (col: (typeof columns)[number]): CardVM[] =>
     cards
       .filter(c => c.column_key === col.key)
@@ -288,17 +352,13 @@ const RetroBoard: React.FC = () => {
               {votingOpen ? 'Clore les votes' : 'Rouvrir les votes'}
             </button>
             <button
-              onClick={() =>
-                downloadMarkdown(retro, columns, cards, votes, nameByToken, facilitatorUrl, tokens)
-              }
+              onClick={handleExportMd}
               className="border px-3 py-1 rounded hover:bg-gray-50"
             >
               Export MD
             </button>
             <button
-              onClick={() =>
-                exportPdf(retro, columns, cards, votes, nameByToken, facilitatorUrl, tokens)
-              }
+              onClick={handleExportPdf}
               className="border px-3 py-1 rounded hover:bg-gray-50"
             >
               Export PDF

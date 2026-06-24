@@ -60,3 +60,12 @@ export interface Token {
   display_name: string | null
   claimed_at: string | null
 }
+
+export interface PresenceLog {
+  id: string
+  retro_id: string
+  token: string
+  display_name: string | null
+  connected_at: string
+  disconnected_at: string | null
+}

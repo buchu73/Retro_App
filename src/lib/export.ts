@@ -1,4 +1,4 @@
-import type { Card, ColumnDef, Retro, Token, Vote } from '../types'
+import type { Card, ColumnDef, PresenceLog, Retro, Vote } from '../types'
 
 const countVotes = (votes: Vote[], cardId: string) =>
   votes.filter(v => v.card_id === cardId).length
@@ -16,11 +16,16 @@ const formatDate = (iso: string) => {
   }
 }
 
-/** Connected participants ordered by connection time. */
-const connectionHistory = (tokens: Token[]) =>
-  tokens
-    .filter(t => t.claimed_at && t.display_name)
-    .sort((a, b) => (a.claimed_at! < b.claimed_at! ? -1 : 1))
+/** Presence sessions ordered by connection time (one per connect/disconnect). */
+const sortedSessions = (log: PresenceLog[]) =>
+  [...log].sort((a, b) => (a.connected_at < b.connected_at ? -1 : 1))
+
+const sessionLabel = (s: PresenceLog) => {
+  const name = s.display_name ?? 'Participant'
+  const inAt = formatDate(s.connected_at)
+  const outAt = s.disconnected_at ? formatDate(s.disconnected_at) : 'toujours connecté'
+  return `${name} — connexion ${inAt} → déconnexion ${outAt}`
+}
 
 /** Build the Markdown export string for a retro. */
 export function buildMarkdown(
@@ -30,7 +35,7 @@ export function buildMarkdown(
   votes: Vote[],
   nameByToken: Record<string, string>,
   facilitatorUrl: string,
-  tokens: Token[]
+  log: PresenceLog[]
 ): string {
   const lines: string[] = []
   lines.push(`# ${retro.title}`)
@@ -40,11 +45,11 @@ export function buildMarkdown(
   lines.push(`- Board animateur : ${facilitatorUrl}`)
   lines.push('')
 
-  const history = connectionHistory(tokens)
-  if (history.length > 0) {
-    lines.push('## Historique de connexion')
-    for (const t of history) {
-      lines.push(`- ${t.display_name} — ${formatDate(t.claimed_at!)}`)
+  const sessions = sortedSessions(log)
+  if (sessions.length > 0) {
+    lines.push('## Journal de présence')
+    for (const s of sessions) {
+      lines.push(`- ${sessionLabel(s)}`)
     }
     lines.push('')
   }
@@ -80,9 +85,9 @@ export function downloadMarkdown(
   votes: Vote[],
   nameByToken: Record<string, string>,
   facilitatorUrl: string,
-  tokens: Token[]
+  log: PresenceLog[]
 ) {
-  const md = buildMarkdown(retro, columns, cards, votes, nameByToken, facilitatorUrl, tokens)
+  const md = buildMarkdown(retro, columns, cards, votes, nameByToken, facilitatorUrl, log)
   const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -101,28 +106,25 @@ const escapeHtml = (s: string) =>
     .replace(/>/g, '&gt;')
 
 /**
- * Export the retro as PDF by opening a print-friendly window.
+ * Render the retro into a print-friendly window (the caller opens `win`
+ * synchronously on the click to avoid popup blocking, then awaits data).
  * The user picks "Enregistrer en PDF" in the browser print dialog.
  */
-export function exportPdf(
+export function renderPdf(
+  win: Window,
   retro: Retro,
   columns: ColumnDef[],
   cards: Card[],
   votes: Vote[],
   nameByToken: Record<string, string>,
   facilitatorUrl: string,
-  tokens: Token[]
+  log: PresenceLog[]
 ) {
-  const history = connectionHistory(tokens)
+  const sessions = sortedSessions(log)
   const historyHtml =
-    history.length > 0
-      ? `<section><h2>Historique de connexion</h2><ul>${history
-          .map(
-            t =>
-              `<li>${escapeHtml(t.display_name as string)} — ${escapeHtml(
-                formatDate(t.claimed_at as string)
-              )}</li>`
-          )
+    sessions.length > 0
+      ? `<section><h2>Journal de présence</h2><ul>${sessions
+          .map(s => `<li>${escapeHtml(sessionLabel(s))}</li>`)
           .join('')}</ul></section>`
       : ''
 
@@ -169,11 +171,6 @@ ${sections}
 <script>window.onload = function () { window.print(); }</script>
 </body></html>`
 
-  const w = window.open('', '_blank')
-  if (!w) {
-    alert('Impossible d’ouvrir la fenêtre d’impression (popup bloqué ?).')
-    return
-  }
-  w.document.write(html)
-  w.document.close()
+  win.document.write(html)
+  win.document.close()
 }

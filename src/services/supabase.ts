@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Card, Retro, Token, Vote } from '../types'
+import type { Card, PresenceLog, Retro, Token, Vote } from '../types'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -226,6 +226,41 @@ export const removeVote = async (cardId: string, voterToken: string) => {
     .eq('card_id', cardId)
     .eq('voter_token', voterToken)
   if (error) throw error
+}
+
+/** Log the start of a presence session. Returns the row id. */
+export const logConnect = async (
+  retroId: string,
+  token: string,
+  displayName: string | null
+): Promise<string> => {
+  const { data, error } = await supabase
+    .from('presence_log')
+    .insert([{ retro_id: retroId, token, display_name: displayName, connected_at: new Date().toISOString() }])
+    .select('id')
+    .single()
+  if (error) throw error
+  return (data as { id: string }).id
+}
+
+/** Mark a presence session as ended. */
+export const logDisconnect = async (rowId: string) => {
+  const { error } = await supabase
+    .from('presence_log')
+    .update({ disconnected_at: new Date().toISOString() })
+    .eq('id', rowId)
+  if (error) throw error
+}
+
+/** All presence sessions for a retro, oldest connection first. */
+export const fetchPresenceLog = async (retroId: string): Promise<PresenceLog[]> => {
+  const { data, error } = await supabase
+    .from('presence_log')
+    .select('*')
+    .eq('retro_id', retroId)
+    .order('connected_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as PresenceLog[]
 }
 
 /**
