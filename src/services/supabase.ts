@@ -1,10 +1,10 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '../types'
+import type { Card, Retro, Token, Vote } from '../types'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
-export const supabase: SupabaseClient<Database> = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey)
 
 // Example wrapper functions – will be fleshed out later
 // Helper to generate a random UUID for tokens
@@ -74,4 +74,127 @@ export const createFullRetro = async (params: {
   return { retroId, facilitatorToken, participantTokens }
 }
 
-// Additional functions (addCard, toggleVote, subscribeCards, subscribeVotes, fetchRetro, claimToken, etc.) will be added.
+// --- Board: read / write helpers -------------------------------------------
+
+/** Fetch a retro by id */
+export const getRetro = async (retroId: string): Promise<Retro> => {
+  const { data, error } = await supabase
+    .from('retros')
+    .select('*')
+    .eq('id', retroId)
+    .single()
+  if (error) throw error
+  return data as Retro
+}
+
+/** Look up a token row for a retro. Returns null if it doesn't exist. */
+export const getToken = async (
+  retroId: string,
+  token: string
+): Promise<Token | null> => {
+  const { data, error } = await supabase
+    .from('tokens')
+    .select('*')
+    .eq('retro_id', retroId)
+    .eq('token', token)
+    .maybeSingle()
+  if (error) throw error
+  return (data as Token) ?? null
+}
+
+/** Claim a token by attaching a display name (first connection). */
+export const claimToken = async (token: string, displayName: string) => {
+  const { error } = await supabase
+    .from('tokens')
+    .update({ display_name: displayName, claimed_at: new Date().toISOString() })
+    .eq('token', token)
+  if (error) throw error
+}
+
+/** All tokens for a retro (used to resolve author names). */
+export const fetchTokens = async (retroId: string): Promise<Token[]> => {
+  const { data, error } = await supabase
+    .from('tokens')
+    .select('*')
+    .eq('retro_id', retroId)
+  if (error) throw error
+  return (data ?? []) as Token[]
+}
+
+/** All cards for a retro, oldest first. */
+export const fetchCards = async (retroId: string): Promise<Card[]> => {
+  const { data, error } = await supabase
+    .from('cards')
+    .select('*')
+    .eq('retro_id', retroId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as Card[]
+}
+
+/** Votes for the given card ids. */
+export const fetchVotes = async (cardIds: string[]): Promise<Vote[]> => {
+  if (cardIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('votes')
+    .select('*')
+    .in('card_id', cardIds)
+  if (error) throw error
+  return (data ?? []) as Vote[]
+}
+
+export const addCard = async (
+  retroId: string,
+  columnKey: string,
+  content: string,
+  authorToken: string
+) => {
+  const { error } = await supabase
+    .from('cards')
+    .insert([{ retro_id: retroId, column_key: columnKey, content, author_token: authorToken }])
+  if (error) throw error
+}
+
+export const deleteCard = async (cardId: string) => {
+  const { error } = await supabase.from('cards').delete().eq('id', cardId)
+  if (error) throw error
+}
+
+export const addVote = async (cardId: string, voterToken: string) => {
+  const { error } = await supabase
+    .from('votes')
+    .insert([{ card_id: cardId, voter_token: voterToken }])
+  if (error) throw error
+}
+
+export const removeVote = async (cardId: string, voterToken: string) => {
+  const { error } = await supabase
+    .from('votes')
+    .delete()
+    .eq('card_id', cardId)
+    .eq('voter_token', voterToken)
+  if (error) throw error
+}
+
+/**
+ * Subscribe to realtime changes on cards + votes for a retro.
+ * Calls `onChange` on any insert/update/delete. Returns an unsubscribe fn.
+ */
+export const subscribeRetro = (retroId: string, onChange: () => void) => {
+  const channel = supabase
+    .channel(`retro-${retroId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'cards', filter: `retro_id=eq.${retroId}` },
+      onChange
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'votes' },
+      onChange
+    )
+    .subscribe()
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}

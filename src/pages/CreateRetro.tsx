@@ -6,8 +6,9 @@ const CreateRetro: React.FC = () => {
   const [type, setType] = useState<'mad_sad_glad' | 'speedboat'>('mad_sad_glad')
   const [participants, setParticipants] = useState(5)
   const [showNames, setShowNames] = useState(true)
-  const [links, setLinks] = useState<string[]>([])
-
+  const [votesPerUser, setVotesPerUser] = useState(5)
+  const [facilitatorLink, setFacilitatorLink] = useState<string | null>(null)
+  const [participantLinks, setParticipantLinks] = useState<string[]>([])
 
   const handleCreate = async () => {
     try {
@@ -15,17 +16,20 @@ const CreateRetro: React.FC = () => {
         title,
         type,
         show_names: showNames,
-        votes_per_user: 5,
+        votes_per_user: votesPerUser,
         participants,
       })
 
       const base = window.location.origin
-      const facilitatorUrl = `${base}/r/${retroId}?t=${facilitatorToken}`
-      const participantUrls = participantTokens.map(t => `${base}/r/${retroId}?t=${t}`)
-      setLinks([facilitatorUrl, ...participantUrls])
+      setFacilitatorLink(`${base}/r/${retroId}?t=${facilitatorToken}`)
+      setParticipantLinks(participantTokens.map(t => `${base}/r/${retroId}?t=${t}`))
     } catch (e: any) {
       alert('Erreur création rétro: ' + (e.message ?? e))
     }
+  }
+
+  const copy = (text: string) => {
+    navigator.clipboard?.writeText(text).catch(() => {})
   }
 
   return (
@@ -46,23 +50,45 @@ const CreateRetro: React.FC = () => {
         <label className="block">Nombre de participants</label>
         <input type="number" min={1} className="border rounded w-full" value={participants} onChange={e => setParticipants(parseInt(e.target.value))} />
       </div>
+      <div className="mb-2">
+        <label className="block">Votes par participant</label>
+        <input type="number" min={1} className="border rounded w-full" value={votesPerUser} onChange={e => setVotesPerUser(parseInt(e.target.value) || 1)} />
+      </div>
       <div className="mb-4">
         <label className="inline-flex items-center">
           <input type="checkbox" checked={showNames} onChange={e => setShowNames(e.target.checked)} className="mr-2" />
           Afficher les noms
         </label>
       </div>
-      <button onClick={handleCreate} className="bg-blue-500 text-white px-4 py-2 rounded">
+      <button onClick={handleCreate} className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
         Créer
       </button>
-      {links.length > 0 && (
-        <div className="mt-4">
-          <h2 className="text-xl">Liens participants</h2>
-          <ul className="list-disc pl-5">
-            {links.map(l => (
-              <li key={l}>{l}</li>
-            ))}
-          </ul>
+
+      {facilitatorLink && (
+        <div className="mt-6 space-y-6">
+          <div>
+            <h2 className="text-xl mb-1">Lien animateur (le vôtre)</h2>
+            <p className="text-sm text-gray-500 mb-1">À conserver : il donne accès à l'animation et aux exports.</p>
+            <div className="flex gap-2 items-start">
+              <code className="flex-1 break-all bg-gray-100 rounded p-2 text-sm">{facilitatorLink}</code>
+              <button onClick={() => copy(facilitatorLink)} className="border px-2 py-1 rounded text-sm whitespace-nowrap">Copier</button>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-xl">Liens participants ({participantLinks.length})</h2>
+              <button onClick={() => copy(participantLinks.join('\n'))} className="border px-2 py-1 rounded text-sm">Tout copier</button>
+            </div>
+            <ul className="space-y-2">
+              {participantLinks.map((l, i) => (
+                <li key={l} className="flex gap-2 items-start">
+                  <code className="flex-1 break-all bg-gray-100 rounded p-2 text-sm">{l}</code>
+                  <button onClick={() => copy(l)} className="border px-2 py-1 rounded text-sm whitespace-nowrap">Copier</button>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
     </div>
