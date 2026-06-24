@@ -21,8 +21,10 @@ const JoinRetro: React.FC = () => {
       setLoading(false)
       return
     }
-    // Already seated on this device? Go straight to the board.
-    const existing = localStorage.getItem(seatKey(retroId))
+    // Already seated in this tab? Go straight to the board.
+    // sessionStorage is per-tab, so a new window/incognito tab gets a fresh
+    // seat instead of reusing the one claimed in another window.
+    const existing = sessionStorage.getItem(seatKey(retroId))
     if (existing) {
       navigate(`/r/${retroId}?t=${existing}`, { replace: true })
       return
@@ -44,7 +46,7 @@ const JoinRetro: React.FC = () => {
     setSubmitting(true)
     try {
       const token = await claimSeat(retroId, n)
-      localStorage.setItem(seatKey(retroId), token)
+      sessionStorage.setItem(seatKey(retroId), token)
       navigate(`/r/${retroId}?t=${token}`, { replace: true })
     } catch (e: any) {
       alert('Erreur lors de la connexion : ' + (e.message ?? e))
