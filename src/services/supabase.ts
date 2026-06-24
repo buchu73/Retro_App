@@ -229,6 +229,38 @@ export const removeVote = async (cardId: string, voterToken: string) => {
 }
 
 /**
+ * Track live presence on a retro: who currently has the board open.
+ * Uses Realtime Presence (channel-only, no DB table). `onSync` receives the
+ * set of tokens currently online; it fires on join and on leave (tab close),
+ * so disconnections are detected. Returns an unsubscribe fn.
+ */
+export const subscribePresence = (
+  retroId: string,
+  self: { token: string; name: string; role: string },
+  onSync: (onlineTokens: string[]) => void
+) => {
+  const channel = supabase.channel(`presence-${retroId}`, {
+    config: { presence: { key: self.token } },
+  })
+  channel
+    .on('presence', { event: 'sync' }, () => {
+      onSync(Object.keys(channel.presenceState()))
+    })
+    .subscribe(async status => {
+      if (status === 'SUBSCRIBED') {
+        await channel.track({
+          name: self.name,
+          role: self.role,
+          online_at: new Date().toISOString(),
+        })
+      }
+    })
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}
+
+/**
  * Subscribe to realtime changes on cards + votes for a retro.
  * Calls `onChange` on any insert/update/delete. Returns an unsubscribe fn.
  */

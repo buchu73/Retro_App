@@ -13,6 +13,7 @@ import {
   removeVote,
   updateRetro,
   subscribeRetro,
+  subscribePresence,
 } from '../services/supabase'
 import Column from '../components/Column'
 import type { CardVM } from '../components/Card'
@@ -35,6 +36,7 @@ const RetroBoard: React.FC = () => {
   const [cards, setCards] = useState<Card[]>([])
   const [votes, setVotes] = useState<Vote[]>([])
   const [tokens, setTokens] = useState<Token[]>([])
+  const [onlineTokens, setOnlineTokens] = useState<string[]>([])
 
   // Validate the token and load the retro.
   useEffect(() => {
@@ -97,6 +99,19 @@ const RetroBoard: React.FC = () => {
     return unsub
   }, [retroId, needsName, tokenRow, refresh])
 
+  // Track live presence (who currently has the board open).
+  useEffect(() => {
+    if (!retroId || needsName || !tokenRow || !token) return
+    const name =
+      tokenRow.display_name ?? (tokenRow.role === 'facilitator' ? 'Animateur' : 'Participant')
+    const unsub = subscribePresence(
+      retroId,
+      { token, name, role: tokenRow.role },
+      setOnlineTokens
+    )
+    return unsub
+  }, [retroId, needsName, tokenRow, token])
+
   const submitName = async () => {
     const name = nameInput.trim()
     if (!name || !token) return
@@ -154,9 +169,14 @@ const RetroBoard: React.FC = () => {
   const myVoteCount = votes.filter(v => v.voter_token === token).length
   const votesLeft = retro.votes_per_user - myVoteCount
 
+  const onlineSet = new Set(onlineTokens)
   const participantTokens = tokens.filter(t => t.role === 'participant')
-  const connected = participantTokens.filter(t => t.display_name)
-  const waiting = participantTokens.length - connected.length
+  // Claimed seats, online ones first.
+  const claimed = participantTokens
+    .filter(t => t.display_name)
+    .sort((a, b) => Number(onlineSet.has(b.token)) - Number(onlineSet.has(a.token)))
+  const onlineCount = claimed.filter(t => onlineSet.has(t.token)).length
+  const waiting = participantTokens.length - claimed.length
 
   const voteCount = (cardId: string) =>
     votes.filter(v => v.card_id === cardId).length
@@ -291,17 +311,22 @@ const RetroBoard: React.FC = () => {
         {isFacilitator && (
           <aside className="w-48 shrink-0 border rounded p-3 bg-gray-50">
             <h2 className="font-bold mb-2">
-              Connectés ({connected.length}/{participantTokens.length})
+              En ligne ({onlineCount}/{claimed.length})
             </h2>
             <ul className="space-y-1 text-sm">
-              {connected.map(t => (
-                <li key={t.token} className="flex items-center gap-1">
-                  <span className="text-green-500">●</span>
-                  <span className="truncate">{t.display_name}</span>
-                </li>
-              ))}
+              {claimed.map(t => {
+                const online = onlineSet.has(t.token)
+                return (
+                  <li key={t.token} className="flex items-center gap-1">
+                    <span className={online ? 'text-green-500' : 'text-gray-300'}>●</span>
+                    <span className={`truncate ${online ? '' : 'text-gray-400'}`}>
+                      {t.display_name}
+                    </span>
+                  </li>
+                )
+              })}
             </ul>
-            {connected.length === 0 && (
+            {claimed.length === 0 && (
               <p className="text-sm text-gray-500">Personne pour le moment.</p>
             )}
             {waiting > 0 && (
