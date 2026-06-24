@@ -8,6 +8,7 @@ const CreateRetro: React.FC = () => {
   const [showNames, setShowNames] = useState(true)
   const [votesPerUser, setVotesPerUser] = useState(5)
   const [facilitatorLink, setFacilitatorLink] = useState<string | null>(null)
+  const [publicLink, setPublicLink] = useState<string | null>(null)
   const [participantLinks, setParticipantLinks] = useState<string[]>([])
 
   const handleCreate = async () => {
@@ -22,6 +23,7 @@ const CreateRetro: React.FC = () => {
 
       const base = window.location.origin
       setFacilitatorLink(`${base}/r/${retroId}?t=${facilitatorToken}`)
+      setPublicLink(`${base}/j/${retroId}`)
       setParticipantLinks(participantTokens.map(t => `${base}/r/${retroId}?t=${t}`))
     } catch (e: any) {
       alert('Erreur création rétro: ' + (e.message ?? e))
@@ -75,9 +77,22 @@ const CreateRetro: React.FC = () => {
             </div>
           </div>
 
+          {publicLink && (
+            <div>
+              <h2 className="text-xl mb-1">Lien public (siège libre)</h2>
+              <p className="text-sm text-gray-500 mb-1">
+                Un seul lien à partager : chaque personne saisit son nom et prend un siège disponible.
+              </p>
+              <div className="flex gap-2 items-start">
+                <code className="flex-1 break-all bg-gray-100 rounded p-2 text-sm">{publicLink}</code>
+                <button onClick={() => copy(publicLink)} className="border px-2 py-1 rounded text-sm whitespace-nowrap">Copier</button>
+              </div>
+            </div>
+          )}
+
           <div>
             <div className="flex items-center justify-between mb-1">
-              <h2 className="text-xl">Liens participants ({participantLinks.length})</h2>
+              <h2 className="text-xl">Liens participants nominatifs ({participantLinks.length})</h2>
               <button onClick={() => copy(participantLinks.join('\n'))} className="border px-2 py-1 rounded text-sm">Tout copier</button>
             </div>
             <ul className="space-y-2">

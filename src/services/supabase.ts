@@ -120,6 +120,49 @@ export const claimToken = async (token: string, displayName: string) => {
   if (error) throw error
 }
 
+/**
+ * Public join: claim a free participant seat for a retro and attach a name.
+ * Free seat = a pre-generated participant token with no claimed_at. The
+ * conditional UPDATE (.is('claimed_at', null)) is atomic per row, so two
+ * users can't grab the same seat. If every planned seat is taken, a new
+ * seat is created on the fly (planned count is only indicative).
+ * Returns the claimed token.
+ */
+export const claimSeat = async (
+  retroId: string,
+  displayName: string
+): Promise<string> => {
+  const now = new Date().toISOString()
+
+  const { data: free, error } = await supabase
+    .from('tokens')
+    .select('id, token')
+    .eq('retro_id', retroId)
+    .eq('role', 'participant')
+    .is('claimed_at', null)
+    .limit(20)
+  if (error) throw error
+
+  for (const seat of free ?? []) {
+    const { data: claimed, error: cErr } = await supabase
+      .from('tokens')
+      .update({ display_name: displayName, claimed_at: now })
+      .eq('id', (seat as { id: string }).id)
+      .is('claimed_at', null)
+      .select('token')
+    if (cErr) throw cErr
+    if (claimed && claimed.length > 0) return (seat as { token: string }).token
+  }
+
+  // No free seat left: create an extra one.
+  const token = crypto.randomUUID()
+  const { error: insErr } = await supabase.from('tokens').insert([
+    { retro_id: retroId, token, role: 'participant', display_name: displayName, claimed_at: now },
+  ])
+  if (insErr) throw insErr
+  return token
+}
+
 /** All tokens for a retro (used to resolve author names). */
 export const fetchTokens = async (retroId: string): Promise<Token[]> => {
   const { data, error } = await supabase
