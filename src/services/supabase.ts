@@ -304,7 +304,10 @@ export const subscribeRetro = (retroId: string, onChange: () => void) => {
     .channel(`retro-${retroId}`)
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'cards', filter: `retro_id=eq.${retroId}` },
+      // No filter on cards: a DELETE event only carries the row's primary key
+      // (not retro_id), so a retro_id filter would drop deletions. The handler
+      // refetches scoped to this retro anyway.
+      { event: '*', schema: 'public', table: 'cards' },
       onChange
     )
     .on(
