@@ -1,19 +1,74 @@
-import React from 'react'
-import CardComponent from './Card'
-import type { Card } from '../types'
+import React, { useState } from 'react'
+import CardComponent, { CardVM } from './Card'
 
 interface ColumnProps {
-  title: string
-  cards: Card[]
+  label: string
+  columnKey: string
+  columnClass: string
+  cards: CardVM[]
+  canAddCards: boolean
+  onAddCard: (columnKey: string, content: string) => void
+  onToggleVote: (cardId: string) => void
+  onDeleteCard: (cardId: string) => void
 }
 
-const Column: React.FC<ColumnProps> = ({ title, cards }) => {
+const Column: React.FC<ColumnProps> = ({
+  label,
+  columnKey,
+  columnClass,
+  cards,
+  canAddCards,
+  onAddCard,
+  onToggleVote,
+  onDeleteCard,
+}) => {
+  const [text, setText] = useState('')
+
+  const submit = () => {
+    const value = text.trim()
+    if (!value) return
+    onAddCard(columnKey, value)
+    setText('')
+  }
+
   return (
-    <div className="border rounded p-2 bg-gray-50">
-      <h2 className="font-bold mb-2 text-center">{title}</h2>
-      {cards.map(card => (
-        <CardComponent key={card.id} card={card} />
-      ))}
+    <div className={`border rounded p-3 flex flex-col ${columnClass}`}>
+      <h2 className="font-bold mb-2 text-center">{label}</h2>
+
+      {canAddCards && (
+        <div className="mb-3">
+          <textarea
+            className="border rounded w-full p-1 text-sm bg-white"
+            rows={2}
+            placeholder="Ajouter une carte… (Ctrl/⌘+Entrée)"
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault()
+                submit()
+              }
+            }}
+          />
+          <button
+            onClick={submit}
+            className="mt-1 w-full bg-blue-500 text-white rounded py-1 text-sm hover:bg-blue-600"
+          >
+            Ajouter
+          </button>
+        </div>
+      )}
+
+      <div className="flex-1">
+        {cards.map(c => (
+          <CardComponent
+            key={c.id}
+            card={c}
+            onToggleVote={onToggleVote}
+            onDelete={onDeleteCard}
+          />
+        ))}
+      </div>
     </div>
   )
 }

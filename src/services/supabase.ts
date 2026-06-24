@@ -1,35 +1,38 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '../types'
+import type { Card, PresenceLog, Retro, Token, Vote } from '../types'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
-export const supabase: SupabaseClient<Database> = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey)
 
 // Example wrapper functions – will be fleshed out later
 // Helper to generate a random UUID for tokens
 // Using native crypto.randomUUID() (available in modern browsers & Node)
 
-export const createRetro = async (params: {
-  title: string
-  type: 'mad_sad_glad' | 'speedboat'
-  show_names: boolean
-  votes_per_user?: number
-  participants: number
-}) => {
-  // Insert the retro and return the created row (including its id)
+export const createRetro = async (
+  params: {
+    title: string
+    type: 'mad_sad_glad' | 'speedboat'
+    show_names: boolean
+    votes_per_user?: number
+    participants: number
+  },
+  facilitatorToken: string
+) => {
+  // Insert the retro and return the created row (including its id).
+  // `facilitator_token` is NOT NULL on the table, so it must be supplied here.
   const { data, error } = await supabase
     .from('retros')
-    .insert([params])
+    .insert([{ ...params, facilitator_token: facilitatorToken }])
     .select('id')
     .single()
   if (error) throw error
   return data
 }
 
-/** Create a facilitator token for a given retro */
-export const createFacilitatorToken = async (retroId: string) => {
-  const token = crypto.randomUUID()
+/** Create the facilitator token row for a given retro */
+export const createFacilitatorToken = async (retroId: string, token: string) => {
   const { error } = await supabase.from('tokens').insert([
     { retro_id: retroId, token, role: 'facilitator', display_name: null },
   ])
@@ -58,9 +61,12 @@ export const createFullRetro = async (params: {
   votes_per_user?: number
   participants: number
 }) => {
-  const retro = await createRetro(params)
+  // Generate the facilitator token up front so it can be stored on the retro
+  // row (facilitator_token is NOT NULL) and reused for its token row.
+  const facilitatorToken = crypto.randomUUID()
+  const retro = await createRetro(params, facilitatorToken)
   const retroId = retro.id as string
-  const facilitatorToken = await createFacilitatorToken(retroId)
+  await createFacilitatorToken(retroId, facilitatorToken)
   const participantTokens = await createParticipantTokens(
     retroId,
     params.participants
@@ -68,4 +74,256 @@ export const createFullRetro = async (params: {
   return { retroId, facilitatorToken, participantTokens }
 }
 
-// Additional functions (addCard, toggleVote, subscribeCards, subscribeVotes, fetchRetro, claimToken, etc.) will be added.
+// --- Board: read / write helpers -------------------------------------------
+
+/** Fetch a retro by id */
+export const getRetro = async (retroId: string): Promise<Retro> => {
+  const { data, error } = await supabase
+    .from('retros')
+    .select('*')
+    .eq('id', retroId)
+    .single()
+  if (error) throw error
+  return data as Retro
+}
+
+/** Look up a token row for a retro. Returns null if it doesn't exist. */
+export const getToken = async (
+  retroId: string,
+  token: string
+): Promise<Token | null> => {
+  const { data, error } = await supabase
+    .from('tokens')
+    .select('*')
+    .eq('retro_id', retroId)
+    .eq('token', token)
+    .maybeSingle()
+  if (error) throw error
+  return (data as Token) ?? null
+}
+
+/** Update facilitator-controlled flags on a retro (lock cards / votes). */
+export const updateRetro = async (
+  retroId: string,
+  patch: Partial<Pick<Retro, 'cards_locked' | 'votes_locked'>>
+) => {
+  const { error } = await supabase.from('retros').update(patch).eq('id', retroId)
+  if (error) throw error
+}
+
+/** Claim a token by attaching a display name (first connection). */
+export const claimToken = async (token: string, displayName: string) => {
+  const { error } = await supabase
+    .from('tokens')
+    .update({ display_name: displayName, claimed_at: new Date().toISOString() })
+    .eq('token', token)
+  if (error) throw error
+}
+
+/**
+ * Public join: claim a free participant seat for a retro and attach a name.
+ * Free seat = a pre-generated participant token with no claimed_at. The
+ * conditional UPDATE (.is('claimed_at', null)) is atomic per row, so two
+ * users can't grab the same seat. If every planned seat is taken, a new
+ * seat is created on the fly (planned count is only indicative).
+ * Returns the claimed token.
+ */
+export const claimSeat = async (
+  retroId: string,
+  displayName: string
+): Promise<string> => {
+  const now = new Date().toISOString()
+
+  const { data: free, error } = await supabase
+    .from('tokens')
+    .select('id, token')
+    .eq('retro_id', retroId)
+    .eq('role', 'participant')
+    .is('claimed_at', null)
+    .limit(20)
+  if (error) throw error
+
+  for (const seat of free ?? []) {
+    const { data: claimed, error: cErr } = await supabase
+      .from('tokens')
+      .update({ display_name: displayName, claimed_at: now })
+      .eq('id', (seat as { id: string }).id)
+      .is('claimed_at', null)
+      .select('token')
+    if (cErr) throw cErr
+    if (claimed && claimed.length > 0) return (seat as { token: string }).token
+  }
+
+  // No free seat left: create an extra one.
+  const token = crypto.randomUUID()
+  const { error: insErr } = await supabase.from('tokens').insert([
+    { retro_id: retroId, token, role: 'participant', display_name: displayName, claimed_at: now },
+  ])
+  if (insErr) throw insErr
+  return token
+}
+
+/** All tokens for a retro (used to resolve author names). */
+export const fetchTokens = async (retroId: string): Promise<Token[]> => {
+  const { data, error } = await supabase
+    .from('tokens')
+    .select('*')
+    .eq('retro_id', retroId)
+  if (error) throw error
+  return (data ?? []) as Token[]
+}
+
+/** All cards for a retro, oldest first. */
+export const fetchCards = async (retroId: string): Promise<Card[]> => {
+  const { data, error } = await supabase
+    .from('cards')
+    .select('*')
+    .eq('retro_id', retroId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as Card[]
+}
+
+/** Votes for the given card ids. */
+export const fetchVotes = async (cardIds: string[]): Promise<Vote[]> => {
+  if (cardIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('votes')
+    .select('*')
+    .in('card_id', cardIds)
+  if (error) throw error
+  return (data ?? []) as Vote[]
+}
+
+export const addCard = async (
+  retroId: string,
+  columnKey: string,
+  content: string,
+  authorToken: string
+) => {
+  const { error } = await supabase
+    .from('cards')
+    .insert([{ retro_id: retroId, column_key: columnKey, content, author_token: authorToken }])
+  if (error) throw error
+}
+
+export const deleteCard = async (cardId: string) => {
+  const { error } = await supabase.from('cards').delete().eq('id', cardId)
+  if (error) throw error
+}
+
+export const addVote = async (cardId: string, voterToken: string) => {
+  const { error } = await supabase
+    .from('votes')
+    .insert([{ card_id: cardId, voter_token: voterToken }])
+  if (error) throw error
+}
+
+export const removeVote = async (cardId: string, voterToken: string) => {
+  const { error } = await supabase
+    .from('votes')
+    .delete()
+    .eq('card_id', cardId)
+    .eq('voter_token', voterToken)
+  if (error) throw error
+}
+
+/** Log the start of a presence session. Returns the row id. */
+export const logConnect = async (
+  retroId: string,
+  token: string,
+  displayName: string | null
+): Promise<string> => {
+  const { data, error } = await supabase
+    .from('presence_log')
+    .insert([{ retro_id: retroId, token, display_name: displayName, connected_at: new Date().toISOString() }])
+    .select('id')
+    .single()
+  if (error) throw error
+  return (data as { id: string }).id
+}
+
+/** Mark a presence session as ended. */
+export const logDisconnect = async (rowId: string) => {
+  const { error } = await supabase
+    .from('presence_log')
+    .update({ disconnected_at: new Date().toISOString() })
+    .eq('id', rowId)
+  if (error) throw error
+}
+
+/** All presence sessions for a retro, oldest connection first. */
+export const fetchPresenceLog = async (retroId: string): Promise<PresenceLog[]> => {
+  const { data, error } = await supabase
+    .from('presence_log')
+    .select('*')
+    .eq('retro_id', retroId)
+    .order('connected_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as PresenceLog[]
+}
+
+/**
+ * Track live presence on a retro: who currently has the board open.
+ * Uses Realtime Presence (channel-only, no DB table). `onSync` receives the
+ * set of tokens currently online; it fires on join and on leave (tab close),
+ * so disconnections are detected. Returns an unsubscribe fn.
+ */
+export const subscribePresence = (
+  retroId: string,
+  self: { token: string; name: string; role: string },
+  onSync: (onlineTokens: string[]) => void
+) => {
+  const channel = supabase.channel(`presence-${retroId}`, {
+    config: { presence: { key: self.token } },
+  })
+  channel
+    .on('presence', { event: 'sync' }, () => {
+      onSync(Object.keys(channel.presenceState()))
+    })
+    .subscribe(async status => {
+      if (status === 'SUBSCRIBED') {
+        await channel.track({
+          name: self.name,
+          role: self.role,
+          online_at: new Date().toISOString(),
+        })
+      }
+    })
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}
+
+/**
+ * Subscribe to realtime changes on cards + votes for a retro.
+ * Calls `onChange` on any insert/update/delete. Returns an unsubscribe fn.
+ */
+export const subscribeRetro = (retroId: string, onChange: () => void) => {
+  const channel = supabase
+    .channel(`retro-${retroId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'cards', filter: `retro_id=eq.${retroId}` },
+      onChange
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'votes' },
+      onChange
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tokens', filter: `retro_id=eq.${retroId}` },
+      onChange
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'retros', filter: `id=eq.${retroId}` },
+      onChange
+    )
+    .subscribe()
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}
